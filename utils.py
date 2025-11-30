@@ -17,6 +17,7 @@ from PyPDF2 import PdfReader
 import io  # Added this import
 from dotenv import load_dotenv
 load_dotenv()
+import streamlit as st
 
 class SmoothException(Exception):
     """Custom exception class"""
@@ -245,7 +246,7 @@ class ResumeRanker:
         
         # Qdrant configuration
         QDRANT_HOST = "https://7960e3d6-0728-42b6-8d09-aa6e3d9bd085.sa-east-1-0.aws.cloud.qdrant.io"
-        QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+        QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
         COLLECTION_NAME = "resume_collection"
         DIMENSION = 1024
         
@@ -291,7 +292,7 @@ class ResumeRanker:
             docs=chunks,
             collection=COLLECTION_NAME,
             qdrant_host=QDRANT_HOST,
-            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
+            qdrant_api_key=st.secrets["QDRANT_API_KEY"],
             dimension=DIMENSION,
             embeddings=embeddings
         )
@@ -301,7 +302,7 @@ class ResumeRanker:
             query=job_desc,
             collection=COLLECTION_NAME,
             qdrant_host=QDRANT_HOST,
-            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
+            qdrant_api_key=st.secrets["QDRANT_API_KEY"],
             embeddings=embeddings,
             k=min(k * 3, len(chunks))  # Get more chunks for analysis
         )
