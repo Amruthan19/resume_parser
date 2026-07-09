@@ -1,0 +1,12 @@
+Alex Kim
+Full Stack Developer
+
+Experience:
+- 2 years of experience with JavaScript, React, and Node.js
+- Built internal tools for a fintech startup
+- Some exposure to Python scripting for data cleanup
+- No cloud deployment experience; used Heroku for hobby projects
+
+Skills: JavaScript, React, Node.js, MongoDB, HTML, CSS, Python
+
+Education: B.A. Information Systems, State University

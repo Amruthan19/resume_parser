@@ -1,0 +1,25 @@
+Senior Python Backend Developer
+
+We are looking for a Senior Python Developer with 5+ years of experience in
+web application development. Required skills:
+
+- Strong expertise in Python, Django or FastAPI
+- Experience with PostgreSQL or another relational database
+- Experience deploying and running services on AWS
+- Solid understanding of REST API design
+- Comfortable working with Docker and CI/CD pipelines
+
+Nice to have:
+- Experience with machine learning or data pipelines
+- Experience leading a small engineering team
+- Familiarity with vector databases or LLM-based applications
+
+Responsibilities:
+- Design and build scalable backend services
+- Own the API layer for our core product
+- Mentor junior engineers
+- Collaborate with product and data teams to ship new features
+
+Qualifications:
+- Bachelor's degree in Computer Science or related field (or equivalent experience)
+- 5+ years of professional software engineering experience

@@ -1,0 +1,115 @@
+{
+  "job_description": "Senior Python Backend Developer\n\nWe are looking for a Senior Python Developer with 5+ years of experience in\nweb application development. Required skills:\n\n- Strong expertise in Python, Django or FastAPI\n- Experience with PostgreSQL or another relational database\n- Experience deploying and running services on AWS\n- Solid understanding of REST API design\n- Comfortable working with Docker and CI/CD pipelines\n\nNice to have:\n- Experience with machine learning or data pipelines\n- Experience leading a small engineering team\n- Familiarity with vector databases or LLM-based applications\n\nResponsibilities:\n- Design and build scalable backend services\n- Own the API layer for our core product\n- Mentor junior engineers\n- Collaborate with product and data teams to ship new features\n\nQualifications:\n- Bachelor's degree in Computer Science or related field (or equivalent experience)\n- 5+ years of professional software engineering experience\n",
+  "scoring_method": {
+    "nlp_similarity_weight": 0.5,
+    "llm_assessment_weight": 0.5,
+    "description": "Score = similarity_weight * NLP cosine-similarity score + llm_weight * LLM qualitative assessment score. See SCORING_METHOD.md for full details."
+  },
+  "total_candidates": 8,
+  "results": [
+    {
+      "Rank": 1,
+      "Resume": "candidate_05_sara_patel.txt",
+      "Score": 52.6,
+      "NLP_Similarity_Score": 25.3,
+      "LLM_Assessment_Score": 80,
+      "Skills": "python, django, fastapi, postgresql, aws, docker, kubernetes, ci/cd, rest api, graphql, qdrant, git, terraform",
+      "Experience": "9+ years of experience mentioned in resume",
+      "Education": "based CI/CD pipeline, cut deployment time by 70%; M.Sc. Computer Science, Georgia Institute of Technology",
+      "Strengths": "Matches on: aws, ci/cd, django, docker, fastapi, postgresql, python, rest api",
+      "Gaps": "Missing (per JD keywords): llm, machine learning",
+      "Overall_Assessment": "Offline rule-based match: 8/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 2,
+      "Resume": "candidate_07_wei_zhang.docx",
+      "Score": 47.6,
+      "NLP_Similarity_Score": 25.3,
+      "LLM_Assessment_Score": 70,
+      "Skills": "python, django, fastapi, postgresql, redis, aws, docker, ci/cd",
+      "Experience": "7+ years of experience mentioned in resume",
+      "Education": "backend systems in Python using Django and FastAPI.",
+      "Strengths": "Matches on: aws, ci/cd, django, docker, fastapi, postgresql, python",
+      "Gaps": "Missing (per JD keywords): llm, machine learning, rest api",
+      "Overall_Assessment": "Offline rule-based match: 7/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 3,
+      "Resume": "candidate_01_priya_sharma.txt",
+      "Score": 47.0,
+      "NLP_Similarity_Score": 24.0,
+      "LLM_Assessment_Score": 70,
+      "Skills": "python, django, fastapi, postgresql, redis, aws, docker, ci/cd, git, microservices",
+      "Experience": "6+ years of experience mentioned in resume",
+      "Education": "Backend Engineer",
+      "Strengths": "Matches on: aws, ci/cd, django, docker, fastapi, postgresql, python",
+      "Gaps": "Missing (per JD keywords): llm, machine learning, rest api",
+      "Overall_Assessment": "Offline rule-based match: 7/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 4,
+      "Resume": "candidate_08_linda_nguyen.pdf",
+      "Score": 44.1,
+      "NLP_Similarity_Score": 28.3,
+      "LLM_Assessment_Score": 60,
+      "Skills": "python, fastapi, flask, postgresql, aws, docker, rest api, git",
+      "Experience": "6+ years of experience mentioned in resume",
+      "Education": "Backend Engineer - Data Platform",
+      "Strengths": "Matches on: aws, docker, fastapi, postgresql, python, rest api",
+      "Gaps": "Missing (per JD keywords): ci/cd, django, llm, machine learning",
+      "Overall_Assessment": "Offline rule-based match: 6/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 5,
+      "Resume": "candidate_03_maria_gonzalez.txt",
+      "Score": 41.8,
+      "NLP_Similarity_Score": 23.5,
+      "LLM_Assessment_Score": 60,
+      "Skills": "python, fastapi, flask, postgresql, aws, docker, machine learning, pinecone",
+      "Experience": "5+ years of experience mentioned in resume",
+      "Education": "Backend / ML Engineer; M.Sc. Computer Science, Universidad Politecnica de Madrid",
+      "Strengths": "Matches on: aws, docker, fastapi, machine learning, postgresql, python",
+      "Gaps": "Missing (per JD keywords): ci/cd, django, llm, rest api",
+      "Overall_Assessment": "Offline rule-based match: 6/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 6,
+      "Resume": "candidate_06_tom_reilly.txt",
+      "Score": 39.1,
+      "NLP_Similarity_Score": 18.3,
+      "LLM_Assessment_Score": 60,
+      "Skills": "python, django, fastapi, aws, docker, kubernetes, ci/cd, linux, terraform",
+      "Experience": "4+ years of experience mentioned in resume",
+      "Education": "Bash and some Python scripting",
+      "Strengths": "Matches on: aws, ci/cd, django, docker, fastapi, python",
+      "Gaps": "Missing (per JD keywords): llm, machine learning, postgresql, rest api",
+      "Overall_Assessment": "Offline rule-based match: 6/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 7,
+      "Resume": "candidate_04_james_okoro.txt",
+      "Score": 17.4,
+      "NLP_Similarity_Score": 14.7,
+      "LLM_Assessment_Score": 20,
+      "Skills": "python, django, javascript, sql, html, css",
+      "Experience": "1+ years of experience mentioned in resume",
+      "Education": "Basic familiarity with SQL for reporting queries",
+      "Strengths": "Matches on: django, python",
+      "Gaps": "Missing (per JD keywords): aws, ci/cd, docker, fastapi, llm, machine learning, postgresql, rest api",
+      "Overall_Assessment": "Offline rule-based match: 2/10 JD keywords found in resume."
+    },
+    {
+      "Rank": 8,
+      "Resume": "candidate_02_alex_kim.txt",
+      "Score": 10.6,
+      "NLP_Similarity_Score": 11.1,
+      "LLM_Assessment_Score": 10,
+      "Skills": "python, mongodb, javascript, react, node.js, html, css",
+      "Experience": "2+ years of experience mentioned in resume",
+      "Education": "B.A. Information Systems, State University",
+      "Strengths": "Matches on: python",
+      "Gaps": "Missing (per JD keywords): aws, ci/cd, django, docker, fastapi, llm, machine learning, postgresql, rest api",
+      "Overall_Assessment": "Offline rule-based match: 1/10 JD keywords found in resume."
+    }
+  ]
+}
