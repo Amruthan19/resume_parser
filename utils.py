@@ -1,47 +1,209 @@
-# resume_ranker.py
 import os
+import io
+import json
+import re
 import logging
+import tempfile
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_qdrant import Qdrant
+from langchain_core.documents import Document
+
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
-import tempfile
+
 import pandas as pd
-import json
-import re
 from PyPDF2 import PdfReader
-import io  # Added this import
-from dotenv import load_dotenv
-load_dotenv()
-import streamlit as st
+
+try:
+    import docx  # python-docx
+except ImportError:
+    docx = None
+
 
 class SmoothException(Exception):
     """Custom exception class"""
     pass
 
+
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+
+
 class ResumeRanker:
-    def __init__(self):
+    def __init__(self, similarity_weight: float = 0.5, llm_weight: float = 0.5):
+        """
+        similarity_weight + llm_weight should sum to 1.0.
+        similarity_weight controls how much the raw embedding/cosine
+        similarity (NLP similarity) contributes to the final Score,
+        versus the LLM's qualitative judgement.
+        """
         self.logger = logging.getLogger(__name__)
-        
-    def create_vector_store(self, docs, collection, qdrant_host, qdrant_api_key, dimension, embeddings):
-        """Create vector store for resume chunks"""
+        total = similarity_weight + llm_weight
+        self.similarity_weight = similarity_weight / total
+        self.llm_weight = llm_weight / total
+
+    # ------------------------------------------------------------------
+    # Model loading
+    # ------------------------------------------------------------------
+    def load_models(self, cohere_key, groq_key):
+        """Load Cohere embeddings and Groq LLM"""
+        embeddings = CohereEmbeddings(cohere_api_key=cohere_key, model="embed-english-v3.0")
+        llm = ChatGroq(
+            groq_api_key=groq_key,
+            model_name="llama-3.3-70b-versatile",
+            temperature=0.1
+        )
+        return embeddings, llm
+
+    # ------------------------------------------------------------------
+    # File validation
+    # ------------------------------------------------------------------
+    def validate_file(self, file_content, filename):
+        """Validate a resume file (PDF/DOCX/TXT) before processing"""
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext not in SUPPORTED_EXTENSIONS:
+            return False, f"Unsupported file type '{ext}'. Supported: PDF, DOCX, TXT"
+
+        if len(file_content) == 0:
+            return False, "File is empty"
+
         try:
-            client = QdrantClient(
-                url=qdrant_host,
-                api_key=qdrant_api_key,
-                timeout=60.0
-            )
+            if ext == ".pdf":
+                pdf_file = io.BytesIO(file_content)
+                reader = PdfReader(pdf_file)
+
+                if reader.is_encrypted:
+                    return False, "PDF is encrypted/password protected"
+                if len(reader.pages) == 0:
+                    return False, "PDF has no pages"
+
+                text = reader.pages[0].extract_text()
+                if not text or len(text.strip()) < 10:
+                    return False, "PDF appears to be empty or contains no readable text"
+
+            elif ext == ".docx":
+                if docx is None:
+                    return False, "python-docx is not installed on the server"
+                doc_file = io.BytesIO(file_content)
+                d = docx.Document(doc_file)
+                text = "\n".join(p.text for p in d.paragraphs)
+                if not text or len(text.strip()) < 10:
+                    return False, "DOCX appears to be empty or contains no readable text"
+
+            elif ext == ".txt":
+                text = file_content.decode("utf-8", errors="ignore")
+                if not text or len(text.strip()) < 10:
+                    return False, "TXT file appears to be empty"
+
+            return True, "File is valid"
+
+        except Exception as e:
+            return False, f"File validation failed: {str(e)}"
+
+    # Backwards-compatible alias
+    def validate_pdf(self, file_content, filename):
+        return self.validate_file(file_content, filename)
+
+    # ------------------------------------------------------------------
+    # Parsing (PDF / DOCX / TXT) -> list[Document]
+    # ------------------------------------------------------------------
+    def parse_pdf(self, file_content, filename):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+        try:
+            loader = PyPDFLoader(tmp_path)
+            docs = loader.load()
+            if not docs:
+                raise Exception("No content extracted from PDF")
+            for d in docs:
+                d.metadata["source"] = filename
+                d.metadata["filename"] = filename
+            return docs
+        except Exception as e:
+            raise Exception(f"PDF parsing error: {str(e)}")
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def parse_docx(self, file_content, filename):
+        if docx is None:
+            raise Exception("python-docx is not installed. Run: pip install python-docx")
+        try:
+            doc_file = io.BytesIO(file_content)
+            d = docx.Document(doc_file)
+            full_text = "\n".join(p.text for p in d.paragraphs if p.text.strip())
+
+            # Also pull text out of tables (skills tables, etc.)
+            for table in d.tables:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text for cell in row.cells if cell.text.strip())
+                    if row_text.strip():
+                        full_text += "\n" + row_text
+
+            if not full_text.strip():
+                raise Exception("No content extracted from DOCX")
+
+            return [Document(
+                page_content=full_text,
+                metadata={"source": filename, "filename": filename}
+            )]
+        except Exception as e:
+            raise Exception(f"DOCX parsing error: {str(e)}")
+
+    def parse_txt(self, file_content, filename):
+        try:
+            text = file_content.decode("utf-8", errors="ignore")
+            if not text.strip():
+                raise Exception("No content extracted from TXT")
+            return [Document(
+                page_content=text,
+                metadata={"source": filename, "filename": filename}
+            )]
+        except Exception as e:
+            raise Exception(f"TXT parsing error: {str(e)}")
+
+    def parse_resume(self, file_content, filename):
+        """Dispatch to the correct parser based on file extension."""
+        ext = os.path.splitext(filename)[1].lower()
+        if ext == ".pdf":
+            return self.parse_pdf(file_content, filename)
+        elif ext == ".docx":
+            return self.parse_docx(file_content, filename)
+        elif ext == ".txt":
+            return self.parse_txt(file_content, filename)
+        else:
+            raise Exception(f"Unsupported file type: {ext}")
+
+    # ------------------------------------------------------------------
+    # Vector store
+    # ------------------------------------------------------------------
+    def create_vector_store(self, docs, collection, qdrant_host, qdrant_api_key, dimension, embeddings):
+        """Create/populate vector store for resume chunks"""
+        try:
+            client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key, timeout=60.0)
+
             if not client.collection_exists(collection_name=collection):
                 client.create_collection(
                     collection_name=collection,
                     vectors_config=models.VectorParams(size=dimension, distance=models.Distance.COSINE),
                 )
-            
-            # Use from_documents instead of add_documents to preserve metadata
+            else:
+                # Clear old points so results from previous runs don't leak in
+                client.delete_collection(collection_name=collection)
+                client.create_collection(
+                    collection_name=collection,
+                    vectors_config=models.VectorParams(size=dimension, distance=models.Distance.COSINE),
+                )
+
             vector_store = Qdrant.from_documents(
                 documents=docs,
                 embedding=embeddings,
@@ -53,297 +215,256 @@ class ResumeRanker:
         except (ResponseHandlingException, UnexpectedResponse) as e:
             raise SmoothException(e.reason_phrase)
 
-    def parse_pdf(self, file_content, filename):
-        """Parse PDF file content"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            tmp.write(file_content)
-            tmp_path = tmp.name
-
-        try:
-            loader = PyPDFLoader(tmp_path)
-            docs = loader.load()
-            
-            if not docs:
-                raise Exception("No content extracted from PDF")
-                
-            # Ensure source is properly set in metadata
-            for doc in docs:
-                doc.metadata["source"] = filename
-                # Also add the filename to page_content metadata for redundancy
-                doc.metadata["filename"] = filename
-                
-            return docs
-            
-        except Exception as e:
-            raise Exception(f"PDF parsing error: {str(e)}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
     def query_resumes(self, query, collection, qdrant_host, qdrant_api_key, embeddings, k):
-        """Query resumes based on job description"""
+        """Query resumes based on job description. Returns cosine-similarity scored chunks."""
         try:
-            client = QdrantClient(
-                url=qdrant_host,
-                api_key=qdrant_api_key,
-            )
+            client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key)
             embeddings_data = embeddings.embed_query(query)
-            
+
             result = client.query_points(
                 collection_name=collection,
                 query=embeddings_data,
                 limit=k,
-                with_payload=True  # Ensure payload is included
+                with_payload=True
             )
-            
-            # Return both content and scores
+
             results = []
             for point in result.points:
-                # Try multiple possible metadata fields for the filename
-                source = point.payload.get("source") or point.payload.get("filename") or "Unknown"
-                
+                payload = point.payload or {}
+                # langchain-qdrant nests page_content/metadata depending on version
+                content = payload.get("page_content", "")
+                metadata = payload.get("metadata", {}) or {}
+                source = (
+                    payload.get("source")
+                    or payload.get("filename")
+                    or metadata.get("source")
+                    or metadata.get("filename")
+                    or "Unknown"
+                )
                 results.append({
-                    'content': point.payload.get("page_content", ""),
-                    'score': point.score,
-                    'source': source
+                    "content": content,
+                    "score": point.score,  # cosine similarity, 0-1
+                    "source": source
                 })
             return results
-            
         except Exception as e:
             self.logger.error(f"Qdrant query error: {str(e)}")
             raise SmoothException(f"Qdrant query failed: {str(e)}")
 
-    def load_models(self, cohere_key, groq_key):
-        """Load Cohere embeddings and Groq LLM"""
-        embeddings = CohereEmbeddings(cohere_api_key=cohere_key, model="embed-english-v3.0")
-        llm = ChatGroq(
-            groq_api_key=groq_key,
-            model_name="llama-3.3-70b-versatile",
-            temperature=0.1
-        )
-        return embeddings, llm
-
-    def validate_pdf(self, file_content, filename):
-        """Validate PDF file before processing"""
-        try:
-            if len(file_content) == 0:
-                return False, "File is empty"
-            
-            pdf_file = io.BytesIO(file_content)
-            reader = PdfReader(pdf_file)
-            
-            if reader.is_encrypted:
-                return False, "PDF is encrypted/password protected"
-            
-            if len(reader.pages) == 0:
-                return False, "PDF has no pages"
-            
-            first_page = reader.pages[0]
-            text = first_page.extract_text()
-            if not text or len(text.strip()) < 10:
-                return False, "PDF appears to be empty or contains no readable text"
-            
-            return True, "PDF is valid"
-            
-        except Exception as e:
-            return False, f"PDF validation failed: {str(e)}"
-
-    def parse_pdf(self, file_content, filename):
-        """Parse PDF file content"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            tmp.write(file_content)
-            tmp_path = tmp.name
-
-        try:
-            loader = PyPDFLoader(tmp_path)
-            docs = loader.load()
-            
-            if not docs:
-                raise Exception("No content extracted from PDF")
-                
-            for doc in docs:
-                doc.metadata["source"] = filename
-                
-            return docs
-            
-        except Exception as e:
-            raise Exception(f"PDF parsing error: {str(e)}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
+    # ------------------------------------------------------------------
+    # LLM extraction + scoring
+    # ------------------------------------------------------------------
     def analyze_resume_match(self, llm, job_desc, resume_text, resume_name):
-        """Analyze how well a resume matches the job description"""
-        
+        """
+        Extract structured skills/experience/education AND produce a
+        qualitative LLM match score + reasoning, in a single call.
+        """
         prompt = f"""
-        Analyze this resume against the job description and provide a comprehensive assessment.
-        
+        You are a technical recruiter. Analyze this resume against the job description.
+
         JOB DESCRIPTION:
         {job_desc[:1500]}
-        
+
         RESUME CONTENT:
-        {resume_text[:2000]}
-        
-        Provide your analysis in this EXACT JSON format:
+        {resume_text[:3000]}
+
+        Respond ONLY with valid JSON in this EXACT format (no markdown fences, no preamble):
         {{
-            "score": 85,
-            "key_skills_match": "Python, Django, AWS",
-            "experience_match": "5 years relevant experience",
+            "skills": ["Python", "Django", "AWS"],
+            "experience": "5 years as a backend engineer, 2 years leading a team of 4",
+            "education": "B.Sc. Computer Science, XYZ University",
+            "llm_score": 85,
             "strengths": "Strong technical skills, relevant project experience",
             "gaps": "Missing cloud certification, limited team leadership",
             "overall_assessment": "Excellent match with strong alignment to required skills"
         }}
-        
-        Scoring guidelines:
+
+        Scoring guidelines for "llm_score" (0-100):
         - 90-100: Excellent match (most requirements met, strong alignment)
         - 80-89: Very good match (most requirements met, minor gaps)
         - 70-79: Good match (core requirements met, some gaps)
         - 60-69: Partial match (some requirements met, significant gaps)
         - Below 60: Poor match (few requirements met)
-        
-        Be objective and focus on:
-        1. Skills and technologies match
-        2. Experience level and relevance
-        3. Education and qualifications
-        4. Overall fit for the role
+
+        Base "skills", "experience", and "education" strictly on what is stated in the
+        resume text above. Do not invent information that isn't present.
         """
-        
+
+        default = {
+            "skills": [],
+            "experience": "Not specified",
+            "education": "Not specified",
+            "llm_score": 50,
+            "strengths": "Analysis unavailable",
+            "gaps": "Analysis unavailable",
+            "overall_assessment": "Analysis incomplete"
+        }
+
         try:
             response = llm.invoke(prompt)
-            json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response.content, re.DOTALL)
             if json_match:
                 analysis = json.loads(json_match.group())
-                return analysis
-            else:
-                # Fallback analysis
-                return {
-                    "score": 50,
-                    "key_skills_match": "Analysis unavailable",
-                    "experience_match": "Analysis unavailable",
-                    "strengths": "Content extracted but analysis failed",
-                    "gaps": "Unable to complete analysis",
-                    "overall_assessment": "Analysis incomplete"
-                }
+                merged = {**default, **analysis}
+                return merged
+            return default
         except Exception as e:
             print(f"Analysis error for {resume_name}: {str(e)}")
-            return {
-                "score": 50,
-                "key_skills_match": "Analysis error",
-                "experience_match": "Analysis error",
-                "strengths": "Unable to analyze",
-                "gaps": "Analysis failed",
-                "overall_assessment": "Error in processing"
-            }
+            default["overall_assessment"] = f"Error in processing: {str(e)}"
+            return default
 
-    def rank_resumes(self, job_desc, pdf_files_data, cohere_key, groq_key, k=10):
-        """Main function to rank resumes against job description"""
-        
+    # ------------------------------------------------------------------
+    # Main ranking pipeline
+    # ------------------------------------------------------------------
+    def rank_resumes(self, job_desc, resume_files_data, cohere_key, groq_key, k=10):
+        """
+        Main function to rank resumes against a job description.
+
+        resume_files_data: list of {"name": filename, "content": bytes}
+        Returns: pandas.DataFrame sorted by final blended Score, descending.
+        """
         if not cohere_key or not groq_key:
             raise Exception("Cohere & Groq API Keys are required!")
-        
-        if not pdf_files_data:
+        if not resume_files_data:
             raise Exception("No resume files provided!")
-        
-        # Qdrant configuration
-        QDRANT_HOST = "https://7960e3d6-0728-42b6-8d09-aa6e3d9bd085.sa-east-1-0.aws.cloud.qdrant.io"
-        QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
+
+        QDRANT_HOST = os.getenv(
+            "QDRANT_URL",
+            "https://923af7ee-921b-41eb-b815-95b55e8ccd55.us-west-1-0.aws.cloud.qdrant.io"
+        )
+        QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
         COLLECTION_NAME = "resume_collection"
         DIMENSION = 1024
-        
-        # Load models
+
         embeddings, llm = self.load_models(cohere_key, groq_key)
-        
-        # Process PDF files
+
+        # ---- Parse resumes (PDF / DOCX / TXT) ----
         docs = []
         processed_files = 0
-        
-        for file_data in pdf_files_data:
-            filename = file_data['name']
-            file_content = file_data['content']
-            print("--------file data----------------------",filename)
+        skipped = []
+
+        for file_data in resume_files_data:
+            filename = file_data["name"]
+            file_content = file_data["content"]
             try:
-                is_valid, validation_msg = self.validate_pdf(file_content, filename)
-                
+                is_valid, msg = self.validate_file(file_content, filename)
                 if not is_valid:
-                    print(f"Skipping {filename}: {validation_msg}")
+                    print(f"Skipping {filename}: {msg}")
+                    skipped.append({"file": filename, "reason": msg})
                     continue
-                
-                parsed_docs = self.parse_pdf(file_content, filename)
-                
+
+                parsed_docs = self.parse_resume(file_content, filename)
                 if parsed_docs:
                     docs.extend(parsed_docs)
                     processed_files += 1
                     print(f"Processed: {filename}")
                 else:
-                    print(f"No content extracted from: {filename}")
-                    
+                    skipped.append({"file": filename, "reason": "No content extracted"})
             except Exception as e:
                 print(f"Failed to process {filename}: {str(e)}")
-        
+                skipped.append({"file": filename, "reason": str(e)})
+
         if processed_files == 0:
-            raise Exception("No valid PDF files were processed!")
-        
-        # Split into chunks
+            raise Exception("No valid resume files were processed!")
+
+        # ---- Chunk ----
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(docs)
-        
-        # Create vector store
-        vector_store = self.create_vector_store(
+
+        # ---- Embed + store ----
+        self.create_vector_store(
             docs=chunks,
             collection=COLLECTION_NAME,
             qdrant_host=QDRANT_HOST,
-            qdrant_api_key=st.secrets["QDRANT_API_KEY"],
+            qdrant_api_key=QDRANT_API_KEY,
             dimension=DIMENSION,
             embeddings=embeddings
         )
-        
-        # Search for matching resume chunks
+
+        # ---- Retrieve top matching chunks (this score = NLP similarity) ----
         matches = self.query_resumes(
             query=job_desc,
             collection=COLLECTION_NAME,
             qdrant_host=QDRANT_HOST,
-            qdrant_api_key=st.secrets["QDRANT_API_KEY"],
+            qdrant_api_key=QDRANT_API_KEY,
             embeddings=embeddings,
-            k=min(k * 3, len(chunks))  # Get more chunks for analysis
+            k=min(k * 5, len(chunks))
         )
-        
-        # Group matches by resume source
+
+        # ---- Group retrieved chunks by resume ----
         resume_matches = {}
         for match in matches:
-            source = match['source']
-            if source not in resume_matches:
-                resume_matches[source] = []
-            resume_matches[source].append(match)
-        
-        # Analyze each resume
+            source = match["source"]
+            resume_matches.setdefault(source, []).append(match)
+
+        # ---- Score each resume ----
         results = []
-        
         for resume_name, match_data in resume_matches.items():
-            # Combine top chunks for this resume
-            top_chunks = sorted(match_data, key=lambda x: x['score'], reverse=True)[:5]
-            combined_text = " ".join([chunk['content'] for chunk in top_chunks])
-            
-            if len(combined_text) < 100:  # Skip if too little content
+            top_chunks = sorted(match_data, key=lambda x: x["score"], reverse=True)[:5]
+            combined_text = " ".join(c["content"] for c in top_chunks)
+
+            if len(combined_text) < 100:
                 continue
-                
+
+            # NLP similarity score: average cosine similarity of top chunks, scaled to 0-100
+            avg_similarity = sum(c["score"] for c in top_chunks) / len(top_chunks)
+            similarity_score = round(max(0.0, min(1.0, avg_similarity)) * 100, 1)
+
             print(f"Analyzing: {resume_name}")
-            
-            # Get AI analysis
             analysis = self.analyze_resume_match(llm, job_desc, combined_text, resume_name)
-            
+            llm_score = max(0, min(100, analysis.get("llm_score", 50)))
+
+            final_score = round(
+                self.similarity_weight * similarity_score + self.llm_weight * llm_score, 1
+            )
+
+            skills = analysis.get("skills", [])
+            if isinstance(skills, list):
+                skills_str = ", ".join(skills) if skills else "Not specified"
+            else:
+                skills_str = str(skills)
+
             results.append({
                 "Resume": resume_name,
-                "Score": max(0, min(100, analysis.get("score", 50))),
-                "Key_Skills": analysis.get("key_skills_match", "Not specified"),
-                "Experience_Match": analysis.get("experience_match", "Not specified"),
+                "Score": final_score,
+                "NLP_Similarity_Score": similarity_score,
+                "LLM_Assessment_Score": llm_score,
+                "Skills": skills_str,
+                "Experience": analysis.get("experience", "Not specified"),
+                "Education": analysis.get("education", "Not specified"),
                 "Strengths": analysis.get("strengths", "Not specified"),
                 "Gaps": analysis.get("gaps", "Not specified"),
-                "Overall_Assessment": analysis.get("overall_assessment", "Not specified")
+                "Overall_Assessment": analysis.get("overall_assessment", "Not specified"),
             })
-        
-        if results:
-            # Sort by score descending
-            df = pd.DataFrame(results).sort_values("Score", ascending=False)
-            return df.head(k)  # Return top k results
-        else:
+
+        if not results:
             raise Exception("No results generated from resume analysis!")
+
+        df = pd.DataFrame(results).sort_values("Score", ascending=False).reset_index(drop=True)
+        df.insert(0, "Rank", range(1, len(df) + 1))
+
+        if skipped:
+            print(f"Skipped {len(skipped)} file(s): {skipped}")
+
+        return df.head(k)
+
+    # ------------------------------------------------------------------
+    # Output helpers
+    # ------------------------------------------------------------------
+    def to_json(self, df: pd.DataFrame, job_desc: str = "") -> str:
+        """Serialize ranked results to a JSON string with metadata."""
+        payload = {
+            "job_description": job_desc,
+            "scoring_method": {
+                "nlp_similarity_weight": self.similarity_weight,
+                "llm_assessment_weight": self.llm_weight,
+                "description": (
+                    "Score = similarity_weight * NLP cosine-similarity score "
+                    "+ llm_weight * LLM qualitative assessment score. "
+                    "See SCORING_METHOD.md for full details."
+                )
+            },
+            "total_candidates": len(df),
+            "results": json.loads(df.to_json(orient="records"))
+        }
+        return json.dumps(payload, indent=2)
