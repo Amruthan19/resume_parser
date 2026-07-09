@@ -1,0 +1,13 @@
+Tom Reilly
+DevOps Engineer
+
+Experience:
+- 4 years of experience managing AWS infrastructure (EC2, S3, IAM)
+- Deep expertise in Docker, Kubernetes, and Terraform
+- Built CI/CD pipelines for multiple teams using GitHub Actions
+- Limited application-level programming; mostly Bash and some Python scripting
+- No experience with Django/FastAPI or building REST APIs from scratch
+
+Skills: AWS, Docker, Kubernetes, Terraform, CI/CD, Bash, Python (scripting), Linux
+
+Education: B.Sc. Information Technology, University of Manchester

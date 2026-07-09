@@ -1,0 +1,13 @@
+Priya Sharma
+Senior Backend Engineer
+
+Experience:
+- 6 years of experience building web applications with Python and Django
+- Led a team of 3 engineers to migrate a monolith to microservices on AWS (EC2, RDS, S3)
+- Designed and maintained REST APIs serving 2M+ requests/day
+- Built CI/CD pipelines with Docker and GitHub Actions
+- Worked with PostgreSQL for primary data storage and Redis for caching
+
+Skills: Python, Django, FastAPI, PostgreSQL, AWS, Docker, REST APIs, Redis, Git
+
+Education: B.Sc. Computer Science, University of Delhi

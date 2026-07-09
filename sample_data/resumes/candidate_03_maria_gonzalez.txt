@@ -1,0 +1,13 @@
+Maria Gonzalez
+Backend / ML Engineer
+
+Experience:
+- 5 years building backend services in Python (FastAPI, Flask)
+- Deployed services on AWS Lambda and ECS
+- Built data pipelines feeding ML models into production APIs
+- Familiar with vector databases (Pinecone) for retrieval-augmented applications
+- Used PostgreSQL and Docker in production
+
+Skills: Python, FastAPI, AWS, Docker, PostgreSQL, Machine Learning, Vector Databases
+
+Education: M.Sc. Computer Science, Universidad Politecnica de Madrid

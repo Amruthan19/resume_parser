@@ -1,0 +1,12 @@
+James Okoro
+Junior Software Engineer
+
+Experience:
+- 1 year as a junior developer maintaining a PHP/WordPress site
+- Basic familiarity with SQL for reporting queries
+- No experience with Python, Django, or cloud platforms
+- Currently self-studying JavaScript
+
+Skills: PHP, WordPress, SQL, HTML, CSS
+
+Education: Associate Degree in Web Development, City Community College

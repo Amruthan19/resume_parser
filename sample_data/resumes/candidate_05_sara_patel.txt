@@ -1,0 +1,17 @@
+Sara Patel
+Staff Software Engineer
+
+Experience:
+- 9 years of professional software engineering experience
+- Architected and led development of a Django + FastAPI platform on AWS
+  (EC2, ECS, RDS, S3) serving enterprise clients
+- Managed a team of 6 engineers, ran code reviews and mentored 3 junior devs
+- Built REST APIs and internal GraphQL services
+- Introduced Docker-based CI/CD pipeline, cut deployment time by 70%
+- Uses PostgreSQL as primary datastore; some experience with vector databases
+  (Qdrant) for a recent internal search feature
+
+Skills: Python, Django, FastAPI, PostgreSQL, AWS, Docker, REST API, GraphQL,
+Kubernetes, CI/CD, Qdrant, Git, Terraform
+
+Education: M.Sc. Computer Science, Georgia Institute of Technology
