@@ -1,14 +1,21 @@
+# Core (needed for both offline and live mode)
 streamlit
 pandas
 python-dotenv
-langchain-cohere
-langchain-groq
 langchain-community
 langchain-text-splitters
-langchain-qdrant
 langchain-core
-qdrant-client
 PyPDF2
 pypdf
 python-docx
 openpyxl
+scikit-learn
+
+# Live mode only (Cohere embeddings + Groq LLM + Qdrant vector store)
+langchain-cohere
+langchain-groq
+langchain-qdrant
+qdrant-client
+
+# Testing
+pytest

@@ -1,3 +1,5 @@
+
+
 import os
 import io
 import json
@@ -8,16 +10,9 @@ import tempfile
 from dotenv import load_dotenv
 load_dotenv()
 
-from langchain_cohere import CohereEmbeddings
-from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_qdrant import Qdrant
 from langchain_core.documents import Document
-
-from qdrant_client import QdrantClient
-from qdrant_client.http import models
-from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 import pandas as pd
 from PyPDF2 import PdfReader
@@ -27,6 +22,10 @@ try:
 except ImportError:
     docx = None
 
+# Offline-mode dependencies (no network calls, no API keys required)
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 class SmoothException(Exception):
     """Custom exception class"""
@@ -34,6 +33,18 @@ class SmoothException(Exception):
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+
+# Curated skill vocabulary used by offline (rule-based) extraction.
+# This is intentionally small/illustrative — the live LLM path has no such
+# limit and can recognize any skill phrased in free text.
+SKILL_VOCABULARY = [
+    "python", "django", "fastapi", "flask", "postgresql", "mysql", "mongodb",
+    "redis", "aws", "azure", "gcp", "docker", "kubernetes", "ci/cd",
+    "rest api", "graphql", "javascript", "typescript", "react", "node.js",
+    "machine learning", "deep learning", "tensorflow", "pytorch",
+    "vector database", "pinecone", "qdrant", "llm", "nlp", "git", "linux",
+    "microservices", "sql", "html", "css", "java", "go", "c++", "terraform",
+]
 
 
 class ResumeRanker:
@@ -53,7 +64,16 @@ class ResumeRanker:
     # Model loading
     # ------------------------------------------------------------------
     def load_models(self, cohere_key, groq_key):
-        """Load Cohere embeddings and Groq LLM"""
+        """Load Cohere embeddings and Groq LLM (live mode only)"""
+        try:
+            from langchain_cohere import CohereEmbeddings
+            from langchain_groq import ChatGroq
+        except ImportError as e:
+            raise ImportError(
+                "Live mode requires langchain-cohere and langchain-groq. "
+                "Install with: pip install langchain-cohere langchain-groq"
+            ) from e
+
         embeddings = CohereEmbeddings(cohere_api_key=cohere_key, model="embed-english-v3.0")
         llm = ChatGroq(
             groq_api_key=groq_key,
@@ -187,7 +207,12 @@ class ResumeRanker:
     # Vector store
     # ------------------------------------------------------------------
     def create_vector_store(self, docs, collection, qdrant_host, qdrant_api_key, dimension, embeddings):
-        """Create/populate vector store for resume chunks"""
+        """Create/populate vector store for resume chunks (live mode only)"""
+        from langchain_qdrant import Qdrant
+        from qdrant_client import QdrantClient
+        from qdrant_client.http import models
+        from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
+
         try:
             client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key, timeout=60.0)
 
@@ -216,7 +241,9 @@ class ResumeRanker:
             raise SmoothException(e.reason_phrase)
 
     def query_resumes(self, query, collection, qdrant_host, qdrant_api_key, embeddings, k):
-        """Query resumes based on job description. Returns cosine-similarity scored chunks."""
+        """Query resumes based on job description. Returns cosine-similarity scored chunks. (live mode only)"""
+        from qdrant_client import QdrantClient
+
         try:
             client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key)
             embeddings_data = embeddings.embed_query(query)
@@ -312,6 +339,157 @@ class ResumeRanker:
             print(f"Analysis error for {resume_name}: {str(e)}")
             default["overall_assessment"] = f"Error in processing: {str(e)}"
             return default
+
+    # ------------------------------------------------------------------
+    # Offline (no-API-key) fallback: TF-IDF similarity + rule-based extraction
+    # ------------------------------------------------------------------
+    def _offline_extract(self, resume_text, job_desc):
+        """
+        Rule-based stand-in for the LLM extraction/scoring step. Used when
+        no Groq key is available (or offline=True is passed explicitly).
+        Matches a fixed skill vocabulary and scores by keyword overlap with
+        the job description. This is deliberately simple and transparent —
+        see README.md 'Design Choices' for why.
+        """
+        text_lower = resume_text.lower()
+        jd_lower = job_desc.lower()
+
+        def contains_skill(text, skill):
+            # Word-boundary match so "go" doesn't match inside "django",
+            # "java" doesn't match inside "javascript", etc.
+            pattern = r"\b" + re.escape(skill) + r"\b"
+            return re.search(pattern, text) is not None
+
+        found_skills = [s for s in SKILL_VOCABULARY if contains_skill(text_lower, s)]
+        jd_skills = set(s for s in SKILL_VOCABULARY if contains_skill(jd_lower, s))
+        matched_skills = set(found_skills) & jd_skills
+        missing_skills = jd_skills - set(found_skills)
+
+        year_matches = re.findall(r"(\d+)\+?\s*years?", text_lower)
+        years = max((int(y) for y in year_matches), default=None)
+        experience = f"{years}+ years of experience mentioned in resume" if years else "No explicit years of experience found"
+
+        degree_patterns = [
+            r"(b\.?sc\.?|bachelor(?:'s)?|b\.?a\.?|b\.?tech)[^.\n]{0,60}",
+            r"(m\.?sc\.?|master(?:'s)?|m\.?tech|mba)[^.\n]{0,60}",
+            r"(ph\.?d\.?|doctorate)[^.\n]{0,60}",
+        ]
+        education_hits = []
+        for pat in degree_patterns:
+            m = re.search(pat, text_lower)
+            if m:
+                start = m.start()
+                snippet = resume_text[start:start + 70].split("\n")[0].strip()
+                education_hits.append(snippet)
+        education = "; ".join(education_hits) if education_hits else "No degree information detected"
+
+        llm_score = round((len(matched_skills) / len(jd_skills)) * 100) if jd_skills else 50
+        llm_score = max(0, min(100, llm_score))
+
+        strengths = (
+            f"Matches on: {', '.join(sorted(matched_skills))}" if matched_skills
+            else "No direct keyword overlap with job description skills detected"
+        )
+        gaps = (
+            f"Missing (per JD keywords): {', '.join(sorted(missing_skills))}" if missing_skills
+            else "No obvious skill gaps detected against JD keyword list"
+        )
+        overall = (
+            f"Offline rule-based match: {len(matched_skills)}/{len(jd_skills)} JD keywords found in resume."
+            if jd_skills else "Offline rule-based match: no scoreable skills found in JD."
+        )
+
+        return {
+            "skills": found_skills,
+            "experience": experience,
+            "education": education,
+            "llm_score": llm_score,
+            "strengths": strengths,
+            "gaps": gaps,
+            "overall_assessment": overall,
+        }
+
+    def rank_resumes_offline(self, job_desc, resume_files_data, k=10):
+        """
+        Fully offline ranking pipeline — no API keys, no network calls.
+        Uses TF-IDF cosine similarity in place of Cohere embeddings, and a
+        rule-based keyword extractor/scorer in place of the Groq LLM.
+        Same output schema and same Score-blending formula as the live path,
+        so results are directly comparable.
+        """
+        if not resume_files_data:
+            raise Exception("No resume files provided!")
+
+        docs = []
+        processed_files = 0
+        skipped = []
+
+        for file_data in resume_files_data:
+            filename = file_data["name"]
+            file_content = file_data["content"]
+            try:
+                is_valid, msg = self.validate_file(file_content, filename)
+                if not is_valid:
+                    skipped.append({"file": filename, "reason": msg})
+                    continue
+                parsed_docs = self.parse_resume(file_content, filename)
+                if parsed_docs:
+                    docs.append({
+                        "source": filename,
+                        "text": "\n".join(d.page_content for d in parsed_docs)
+                    })
+                    processed_files += 1
+                else:
+                    skipped.append({"file": filename, "reason": "No content extracted"})
+            except Exception as e:
+                skipped.append({"file": filename, "reason": str(e)})
+
+        if processed_files == 0:
+            raise Exception("No valid resume files were processed!")
+
+        corpus = [job_desc] + [d["text"] for d in docs]
+        vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+        jd_vector = tfidf_matrix[0:1]
+        resume_vectors = tfidf_matrix[1:]
+        similarities = cosine_similarity(jd_vector, resume_vectors)[0]
+
+        results = []
+        for doc, sim in zip(docs, similarities):
+            similarity_score = round(max(0.0, min(1.0, float(sim))) * 100, 1)
+            analysis = self._offline_extract(doc["text"], job_desc)
+            llm_score = analysis["llm_score"]
+
+            final_score = round(
+                self.similarity_weight * similarity_score + self.llm_weight * llm_score, 1
+            )
+
+            skills = analysis.get("skills", [])
+            skills_str = ", ".join(skills) if skills else "None detected"
+
+            results.append({
+                "Resume": doc["source"],
+                "Score": final_score,
+                "NLP_Similarity_Score": similarity_score,
+                "LLM_Assessment_Score": llm_score,
+                "Skills": skills_str,
+                "Experience": analysis.get("experience", "Not specified"),
+                "Education": analysis.get("education", "Not specified"),
+                "Strengths": analysis.get("strengths", "Not specified"),
+                "Gaps": analysis.get("gaps", "Not specified"),
+                "Overall_Assessment": analysis.get("overall_assessment", "Not specified"),
+            })
+
+        if not results:
+            raise Exception("No results generated from resume analysis!")
+
+        df = pd.DataFrame(results).sort_values("Score", ascending=False).reset_index(drop=True)
+        df.insert(0, "Rank", range(1, len(df) + 1))
+
+        if skipped:
+            print(f"Skipped {len(skipped)} file(s): {skipped}")
+
+        return df.head(k)
 
     # ------------------------------------------------------------------
     # Main ranking pipeline
