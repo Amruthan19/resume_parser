@@ -1,21 +1,14 @@
-streamlit==1.38.0
-pandas==2.2.3
-python-dotenv==1.0.1
-pypdf==4.3.1
-
-# Vector DB
-qdrant-client==1.16.1
-
-# Embeddings + LLM
-cohere==5.20.0
-groq==0.36.0
-
-# LangChain ecosystem
-langchain==0.2.17
-langchain-core==1.1.0
-langchain-community==0.4.1
-langchain-text-splitters==1.0.0
-langchain-cohere==0.5.0
-langchain-groq==1.1.0
-langchain-qdrant==1.1.0
-langsmith==0.4.49
+streamlit
+pandas
+python-dotenv
+langchain-cohere
+langchain-groq
+langchain-community
+langchain-text-splitters
+langchain-qdrant
+langchain-core
+qdrant-client
+PyPDF2
+pypdf
+python-docx
+openpyxl
