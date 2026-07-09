@@ -236,36 +236,6 @@ note" below.
   checks for extractable text) rather than silently returning garbage —
   but that does mean OCR is out of scope here.
 
-### Environment note (why no live-mode results are included)
 
-This project was built and tested in a sandboxed environment whose network
-access is restricted to a small allowlist (PyPI, npm, GitHub, etc.) and does
-**not** include `api.cohere.com`, `api.groq.com`, or `*.qdrant.io`. Because
-of that, I could not execute the live pipeline against real Cohere/Groq/Qdrant
-accounts from within that environment — `sample_data/output/` therefore only
-contains the offline-mode run.
 
-The offline path exercises the exact same code (parsing, chunking-equivalent
-text handling, score blending, ranking, CSV/JSON export) minus the specific
-embedding/LLM providers, so it's a legitimate end-to-end test of the
-pipeline's correctness. If you run `python run_demo.py --live` with your own
-keys, it will produce `ranked_results_live.csv/json` alongside the committed
-offline results, using the exact same input resumes — the two are directly
-comparable.
-
----
-
-## 7. Submission note
-
-I don't have the ability to create or push to a GitHub repository on your
-behalf — you'll need to `git init`, commit these files (including
-`sample_data/output/`), push to your own GitHub, and share that URL before
-your deadline. Suggested `.gitignore`:
-
-```
-venv/
-__pycache__/
-*.pyc
-.env
-```
 
